@@ -20,6 +20,7 @@
 
 #include "dtc.h"
 #include "srcpos.h"
+#include "nv.h"
 
 #include "version_gen.h"
 
@@ -127,7 +128,7 @@ int main(int argc, char *argv[])
 	minsize    = 0;
 	padsize    = 0;
 
-	while ((opt = getopt(argc, argv, "hI:O:o:V:R:S:p:fcqb:v")) != EOF) {
+	while ((opt = getopt(argc, argv, "hD:I:O:o:V:R:S:p:fcqb:v")) != EOF) {
 		switch (opt) {
 		case 'I':
 			inform = optarg;
@@ -161,6 +162,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'b':
 			cmdline_boot_cpuid = strtoll(optarg, NULL, 0);
+			break;
+		case 'D':
+			nv_note_define(optarg);
 			break;
 		case 'v':
 			printf("Version: %s\n", DTC_VERSION);
@@ -202,7 +206,6 @@ int main(int argc, char *argv[])
 
 	fill_fullpaths(bi->dt, "");
 	process_checks(force, bi);
-
 
 	if (streq(outname, "-")) {
 		outf = stdout;

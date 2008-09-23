@@ -18,7 +18,7 @@ CONFIG_LOCALVERSION =
 CPPFLAGS = -I libfdt
 CFLAGS = -Wall -g -Os -fPIC -Wpointer-arith -Wcast-qual
 
-BISON = bison
+BISON = bison -v
 LEX = flex
 
 INSTALL = /usr/bin/install

@@ -20,6 +20,7 @@
 
 #include "dtc.h"
 #include "srcpos.h"
+#include "ir.h"
 
 extern FILE *yyin;
 extern int yyparse(void);
@@ -40,6 +41,8 @@ struct boot_info *dt_from_source(const char *fname)
 
 	if (treesource_error)
 		die("Syntax error parsing input tree\n");
+
+	ir_process();
 
 	return the_boot_info;
 }

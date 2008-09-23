@@ -9,7 +9,14 @@ DTC_SRCS = \
 	dtc.c \
 	flattree.c \
 	fstree.c \
+	ir.c \
+	ir_builtin.c \
+	ir_dump.c \
+	ir_emit.c \
+	ir_eval.c \
+	ir_scope.c \
 	livetree.c \
+	nv.c \
 	srcpos.c \
 	treesource.c \
 	util.c

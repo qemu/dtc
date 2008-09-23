@@ -97,6 +97,22 @@ struct node *chain_node(struct node *first, struct node *list)
 	return first;
 }
 
+struct node *reverse_nodes(struct node *first)
+{
+	struct node *p = first;
+	struct node *head = NULL;
+	struct node *next;
+
+	while (p) {
+		next = p->next_sibling;
+		p->next_sibling = head;
+		head = p;
+		p = next;
+	}
+	return head;
+}
+
+
 void add_property(struct node *node, struct property *prop)
 {
 	struct property **p;
