@@ -36,8 +36,8 @@ extern bool treesource_error;
 
 static uint64_t expr_int(struct expression *expr);
 
-#define UNOP(op, a)	(expression_##op((a)))
-#define BINOP(op, a, b)	(expression_##op((a), (b)))
+#define UNOP(loc, op, a)	(expression_##op(&loc, (a)))
+#define BINOP(loc, op, a, b)	(expression_##op(&loc, (a), (b)))
 %}
 
 %union {
@@ -338,8 +338,8 @@ arrayprefix:
 	;
 
 expr_prim:
-	  DT_LITERAL 		{ $$ = expression_constant($1); }
-	| DT_CHAR_LITERAL	{ $$ = expression_constant($1); }
+	  DT_LITERAL 		{ $$ = expression_constant(&yylloc, $1); }
+	| DT_CHAR_LITERAL	{ $$ = expression_constant(&yylloc, $1); }
 	| '(' expr ')'
 		{
 			$$ = $2;
@@ -354,73 +354,73 @@ expr_conditional:
 	  expr_or
 	| expr_or '?' expr ':' expr_conditional
 		{
-			$$ = expression_conditional($1, $3, $5);
+			$$ = expression_conditional(&yylloc, $1, $3, $5);
 		}
 	;
 
 expr_or:
 	  expr_and
-	| expr_or DT_OR expr_and { $$ = BINOP(logic_or, $1, $3); }
+	| expr_or DT_OR expr_and { $$ = BINOP(@$, logic_or, $1, $3); }
 	;
 
 expr_and:
 	  expr_bitor
-	| expr_and DT_AND expr_bitor { $$ = BINOP(logic_and, $1, $3); }
+	| expr_and DT_AND expr_bitor { $$ = BINOP(@$, logic_and, $1, $3); }
 	;
 
 expr_bitor:
 	  expr_bitxor
-	| expr_bitor '|' expr_bitxor { $$ = BINOP(bit_or, $1, $3); }
+	| expr_bitor '|' expr_bitxor { $$ = BINOP(@$, bit_or, $1, $3); }
 	;
 
 expr_bitxor:
 	  expr_bitand
-	| expr_bitxor '^' expr_bitand { $$ = BINOP(bit_xor, $1, $3); }
+	| expr_bitxor '^' expr_bitand { $$ = BINOP(@$, bit_xor, $1, $3); }
 	;
 
 expr_bitand:
 	  expr_eq
-	| expr_bitand '&' expr_eq { $$ = BINOP(bit_and, $1, $3); }
+	| expr_bitand '&' expr_eq { $$ = BINOP(@$, bit_and, $1, $3); }
 	;
 
 expr_eq:
 	  expr_rela
-	| expr_eq DT_EQ expr_rela { $$ = BINOP(eq, $1, $3); }
-	| expr_eq DT_NE expr_rela { $$ = BINOP(ne, $1, $3); }
+	| expr_eq DT_EQ expr_rela { $$ = BINOP(@$, eq, $1, $3); }
+	| expr_eq DT_NE expr_rela { $$ = BINOP(@$, ne, $1, $3); }
 	;
 
 expr_rela:
 	  expr_shift
-	| expr_rela '<' expr_shift { $$ = BINOP(lt, $1, $3); }
-	| expr_rela '>' expr_shift { $$ = BINOP(gt, $1, $3); }
-	| expr_rela DT_LE expr_shift { $$ = BINOP(le, $1, $3); }
-	| expr_rela DT_GE expr_shift { $$ = BINOP(ge, $1, $3); }
+	| expr_rela '<' expr_shift { $$ = BINOP(@$, lt, $1, $3); }
+	| expr_rela '>' expr_shift { $$ = BINOP(@$, gt, $1, $3); }
+	| expr_rela DT_LE expr_shift { $$ = BINOP(@$, le, $1, $3); }
+	| expr_rela DT_GE expr_shift { $$ = BINOP(@$, ge, $1, $3); }
 	;
 
 expr_shift:
-	  expr_shift DT_LSHIFT expr_add { $$ = BINOP(lshift, $1, $3); }
-	| expr_shift DT_RSHIFT expr_add { $$ = BINOP(rshift, $1, $3); }
+	  expr_shift DT_LSHIFT expr_add { $$ = BINOP(@$, lshift, $1, $3); }
+	| expr_shift DT_RSHIFT expr_add { $$ = BINOP(@$, rshift, $1, $3); }
 	| expr_add
 	;
 
 expr_add:
-	  expr_add '+' expr_mul { $$ = BINOP(add, $1, $3); }
-	| expr_add '-' expr_mul { $$ = BINOP(sub, $1, $3); }
+	  expr_add '+' expr_mul { $$ = BINOP(@$, add, $1, $3); }
+	| expr_add '-' expr_mul { $$ = BINOP(@$, sub, $1, $3); }
 	| expr_mul
 	;
 
 expr_mul:
-	  expr_mul '*' expr_unary { $$ = BINOP(mul, $1, $3); }
-	| expr_mul '/' expr_unary { $$ = BINOP(div, $1, $3); }
-	| expr_mul '%' expr_unary { $$ = BINOP(mod, $1, $3); }
+	  expr_mul '*' expr_unary { $$ = BINOP(@$, mul, $1, $3); }
+	| expr_mul '/' expr_unary { $$ = BINOP(@$, div, $1, $3); }
+	| expr_mul '%' expr_unary { $$ = BINOP(@$, mod, $1, $3); }
 	| expr_unary
 	;
 
 expr_unary:
 	  expr_prim
-	| '-' expr_unary { $$ = UNOP(negate, $2); }
-	| '~' expr_unary { $$ = UNOP(bit_not, $2); }
-	| '!' expr_unary { $$ = UNOP(logic_not, $2); }
+	| '-' expr_unary { $$ = UNOP(@$, negate, $2); }
+	| '~' expr_unary { $$ = UNOP(@$, bit_not, $2); }
+	| '!' expr_unary { $$ = UNOP(@$, logic_not, $2); }
 	;
 
 bytestring:

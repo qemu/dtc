@@ -17,7 +17,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307
  *                                                                   USA
  */
-
+#include "srcpos.h"
 #include "dtc.h"
 
 struct operator {
@@ -27,7 +27,8 @@ struct operator {
 	void (*free)(struct expression *);
 };
 
-static struct expression *__expression_build(struct operator *op, ...)
+static struct expression *__expression_build(struct srcpos *loc,
+					     struct operator *op, ...)
 {
 	int nargs = 0;
 	struct expression *expr;
@@ -43,6 +44,10 @@ static struct expression *__expression_build(struct operator *op, ...)
 	expr = xmalloc(sizeof(*expr) + nargs*sizeof(struct expression *));
 	expr->op = op;
 	expr->nargs = nargs;
+	if (loc)
+		expr->loc = srcpos_copy(loc);
+	else
+		expr->loc = NULL;
 
 	va_start(ap, op);
 	for (i = 0; i < nargs; i++)
@@ -51,8 +56,8 @@ static struct expression *__expression_build(struct operator *op, ...)
 
 	return expr;
 }
-#define expression_build(...) \
-	(__expression_build(__VA_ARGS__, NULL))
+#define expression_build(loc, ...)		\
+	(__expression_build(loc, __VA_ARGS__, NULL))
 
 void expression_free(struct expression *expr)
 {
@@ -79,9 +84,9 @@ static struct operator op_constant = {
 	.name = "constant",
 	.evaluate = op_eval_constant,
 };
-struct expression *expression_constant(uint64_t val)
+struct expression *expression_constant(struct srcpos *loc, uint64_t val)
 {
-	struct expression *expr = expression_build(&op_constant);
+	struct expression *expr = expression_build(loc, &op_constant);
 
 	expr->u.constant = val;
 	return expr;
@@ -97,9 +102,10 @@ struct expression *expression_constant(uint64_t val)
 		.name = #cop, \
 		.evaluate = op_eval_##nm, \
 	}; \
-	struct expression *expression_##nm(struct expression *arg)	\
+	struct expression *expression_##nm(struct srcpos *loc, \
+					   struct expression *arg) \
 	{ \
-		return expression_build(&op_##nm, arg);	\
+		return expression_build(loc, &op_##nm, arg);	\
 	}
 
 INT_UNARY_OP(negate, -)
@@ -117,9 +123,11 @@ INT_UNARY_OP(logic_not, !)
 		.name = #cop, \
 		.evaluate = op_eval_##nm, \
 	}; \
-	struct expression *expression_##nm(struct expression *arg1, struct expression *arg2) \
+	struct expression *expression_##nm(struct srcpos *loc, \
+					   struct expression *arg1, \
+					   struct expression *arg2) \
 	{ \
-		return expression_build(&op_##nm, arg1, arg2);	\
+		return expression_build(loc, &op_##nm, arg1, arg2);	\
 	}
 
 INT_BINARY_OP(mod, %)
@@ -158,8 +166,10 @@ static struct operator op_conditional = {
 	.name = "?:",
 	.evaluate = op_eval_conditional,
 };
-struct expression *expression_conditional(struct expression *arg1, struct expression *arg2,
+struct expression *expression_conditional(struct srcpos *loc,
+					  struct expression *arg1,
+					  struct expression *arg2,
 					  struct expression *arg3)
 {
-	return expression_build(&op_conditional, arg1, arg2, arg3);
+	return expression_build(loc, &op_conditional, arg1, arg2, arg3);
 }
