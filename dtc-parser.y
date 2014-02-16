@@ -48,8 +48,8 @@ static struct data expr_bytestring(struct expression *expr);
 	struct data data;
 
 	struct {
-		struct data	data;
-		int		bits;
+		int bits;
+		struct expression *expr;
 	} array;
 
 	struct property *prop;
@@ -80,6 +80,7 @@ static struct data expr_bytestring(struct expression *expr);
 %type <data> propdataprefix
 %type <re> memreserve
 %type <re> memreserves
+%type <array> array
 %type <array> arrayprefix
 %type <data> bytestring_literal
 %type <prop> propdef
@@ -216,10 +217,6 @@ propdata:
 			struct data d = expr_bytestring($2);
 			$$ = data_merge($1, d);
 		}
-	| propdataprefix arrayprefix '>'
-		{
-			$$ = data_merge($1, $2.data);
-		}
 	| propdataprefix DT_REF
 		{
 			$$ = data_add_marker($1, REF_PATH, $2);
@@ -245,6 +242,10 @@ propdataprefix:
 		}
 	;
 
+array:
+	  arrayprefix '>'	{ $$ = $1; }
+	;
+
 arrayprefix:
 	DT_BITS DT_LITERAL '<'
 		{
@@ -259,52 +260,48 @@ arrayprefix:
 				bits = 32;
 			}
 
-			$$.data = empty_data;
 			$$.bits = bits;
+			$$.expr = expression_bytestring_constant(&@$, empty_data);
 		}
 	| '<'
 		{
-			$$.data = empty_data;
 			$$.bits = 32;
+			$$.expr = expression_bytestring_constant(&@$, empty_data);
 		}
 	| arrayprefix expr_prim
 		{
-			uint64_t val = expr_int($2);
-
-			if ($1.bits < 64) {
-				uint64_t mask = (1ULL << $1.bits) - 1;
-				/*
-				 * Bits above mask must either be all zero
-				 * (positive within range of mask) or all one
-				 * (negative and sign-extended). The second
-				 * condition is true if when we set all bits
-				 * within the mask to one (i.e. | in the
-				 * mask), all bits are one.
-				 */
-				if ((val > mask) && ((val | mask) != -1ULL))
-					ERROR(&@2, "Value out of range for"
-					      " %d-bit array element", $1.bits);
-			}
-
-			$$.data = data_append_integer($1.data, val, $1.bits);
+			struct expression *cell = expression_arraycell(&@2,
+								       $1.bits,
+								       $2);
+			$$.bits = $1.bits;
+			$$.expr = expression_join(&@$, $1.expr, cell);
 		}
 	| arrayprefix DT_REF
 		{
 			uint64_t val = ~0ULL >> (64 - $1.bits);
+			struct data d = empty_data;
+			struct expression *cell;
 
 			if ($1.bits == 32)
-				$1.data = data_add_marker($1.data,
-							  REF_PHANDLE,
-							  $2);
+				d = data_add_marker(d, REF_PHANDLE, $2);
 			else
 				ERROR(&@2, "References are only allowed in "
 					    "arrays with 32-bit elements.");
 
-			$$.data = data_append_integer($1.data, val, $1.bits);
+			d = data_append_integer(d, val, $1.bits);
+			cell = expression_bytestring_constant(&@2, d);
+
+			$$.bits = $1.bits;
+			$$.expr = expression_join(&@$, $1.expr, cell);
 		}
 	| arrayprefix DT_LABEL
 		{
-			$$.data = data_add_marker($1.data, LABEL, $2);
+			struct data d = data_add_marker(empty_data, LABEL, $2);
+			struct expression *label;
+
+			label = expression_bytestring_constant(&@2, d);
+			$$.bits = $1.bits;
+			$$.expr = expression_join(&@$, $1.expr, label);
 		}
 	;
 
@@ -333,6 +330,7 @@ expr_prim:
 			$$ = expression_bytestring_constant(&@2, $2);
 		}
 	| expr_incbin
+	| array			{ $$ = $1.expr; }
 	| '(' expr ')'
 		{
 			$$ = $2;

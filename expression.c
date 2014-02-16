@@ -380,3 +380,57 @@ struct expression *expression_incbin(struct srcpos *loc,
 {
 	return expression_build(loc, &op_incbin, file, off, len);
 }
+
+static struct expression_value op_eval_arraycell(struct expression *expr,
+						 enum expr_type context)
+{
+	uint64_t cellval;
+	struct expression_value v = {
+		.type = EXPR_BYTESTRING,
+	};
+	int bits = expr->u.bits;
+
+	assert(expr->nargs == 1);
+	EVALUATE_INT(cellval, expr->arg[0]);
+
+	v.value.d = data_append_integer(empty_data, cellval, bits);
+	return v;
+}
+static struct operator op_arraycell = {
+	.name = "< >",
+	.evaluate = op_eval_arraycell,
+};
+struct expression *expression_arraycell(struct srcpos *loc, int bits,
+					struct expression *cell)
+{
+	struct expression *expr = expression_build(loc, &op_arraycell, cell);
+
+	expr->u.bits = bits;
+	return expr;
+}
+
+static struct expression_value op_eval_join(struct expression *expr,
+					    enum expr_type context)
+{
+	struct data arg0, arg1;
+	struct expression_value v = {
+		.type = EXPR_BYTESTRING,
+	};
+
+	assert(expr->nargs == 2);
+	EVALUATE_BS(arg0, expr->arg[0]);
+	EVALUATE_BS(arg1, expr->arg[1]);
+
+	v.value.d = data_merge(arg0, arg1);
+	return v;
+}
+static struct operator op_join = {
+	.name = ",",
+	.evaluate = op_eval_join,
+};
+struct expression *expression_join(struct srcpos *loc,
+				   struct expression *arg0,
+				   struct expression *arg1)
+{
+	return expression_build(loc, &op_join, arg0, arg1);
+}

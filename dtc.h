@@ -246,6 +246,7 @@ struct expression {
 	int nargs;
 	union {
 		struct expression_value constant;
+		int bits;
 	} u;
 	struct expression *arg[0];
 };
@@ -309,6 +310,11 @@ struct expression *expression_incbin(struct srcpos *loc,
 				     struct expression *file,
 				     struct expression *off,
 				     struct expression *len);
+struct expression *expression_arraycell(struct srcpos *loc, int bits,
+					struct expression *cell);
+struct expression *expression_join(struct srcpos *loc,
+				   struct expression *arg0,
+				   struct expression *arg1);
 
 /* Boot info (tree plus memreserve information */
 
