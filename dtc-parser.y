@@ -93,6 +93,7 @@ static struct data expr_bytestring(struct expression *expr);
 
 %type <expr> expr_incbin
 %type <expr> expr_prim
+%type <expr> expr_prelabel
 %type <expr> expr_unary
 %type <expr> expr_mul
 %type <expr> expr_add
@@ -105,6 +106,7 @@ static struct data expr_bytestring(struct expression *expr);
 %type <expr> expr_and
 %type <expr> expr_or
 %type <expr> expr_conditional
+%type <expr> expr_postlabel
 %type <expr> expr
 
 %%
@@ -221,10 +223,6 @@ propdata:
 		{
 			$$ = data_add_marker($1, REF_PATH, $2);
 		}
-	| propdata DT_LABEL
-		{
-			$$ = data_add_marker($1, LABEL, $2);
-		}
 	;
 
 propdataprefix:
@@ -235,10 +233,6 @@ propdataprefix:
 	| propdata ','
 		{
 			$$ = $1;
-		}
-	| propdataprefix DT_LABEL
-		{
-			$$ = data_add_marker($1, LABEL, $2);
 		}
 	;
 
@@ -338,7 +332,19 @@ expr_prim:
 	;
 
 expr:
-	expr_conditional
+	  expr_postlabel
+	;
+
+expr_postlabel:
+	  expr_conditional
+	| expr_conditional DT_LABEL
+		{
+			struct data d = data_add_marker(empty_data, LABEL, $2);
+			struct expression *label;
+
+			label = expression_bytestring_constant(&@2, d);
+			$$ = expression_join(&@$, $1, label);
+		}
 	;
 
 expr_conditional:
@@ -408,10 +414,22 @@ expr_mul:
 	;
 
 expr_unary:
-	  expr_prim
+	  expr_prelabel
 	| '-' expr_unary { $$ = UNOP(@$, negate, $2); }
 	| '~' expr_unary { $$ = UNOP(@$, bit_not, $2); }
 	| '!' expr_unary { $$ = UNOP(@$, logic_not, $2); }
+	;
+
+expr_prelabel:
+	  expr_prim
+	| DT_LABEL expr_prelabel
+		{
+			struct data d = data_add_marker(empty_data, LABEL, $1);
+			struct expression *label;
+
+			label = expression_bytestring_constant(&@1, d);
+			$$ = expression_join(&@$, label, $2);
+		}
 	;
 
 bytestring_literal:
