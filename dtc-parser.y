@@ -35,6 +35,8 @@ extern struct boot_info *the_boot_info;
 extern bool treesource_error;
 
 static uint64_t expr_int(struct expression *expr);
+static const char *expr_str(struct expression *expr);
+static struct data expr_bytestring(struct expression *expr);
 
 #define UNOP(loc, op, a)	(expression_##op(&loc, (a)))
 #define BINOP(loc, op, a, b)	(expression_##op(&loc, (a), (b)))
@@ -80,7 +82,7 @@ static uint64_t expr_int(struct expression *expr);
 %type <re> memreserve
 %type <re> memreserves
 %type <array> arrayprefix
-%type <data> bytestring
+%type <data> bytestring_literal
 %type <prop> propdef
 %type <proplist> proplist
 
@@ -209,32 +211,30 @@ propdef:
 	;
 
 propdata:
-	  propdataprefix DT_STRING
+	  propdataprefix expr
 		{
-			$$ = data_merge($1, $2);
+			struct data d = expr_bytestring($2);
+			$$ = data_merge($1, d);
 		}
 	| propdataprefix arrayprefix '>'
 		{
 			$$ = data_merge($1, $2.data);
 		}
-	| propdataprefix '[' bytestring ']'
-		{
-			$$ = data_merge($1, $3);
-		}
 	| propdataprefix DT_REF
 		{
 			$$ = data_add_marker($1, REF_PATH, $2);
 		}
-	| propdataprefix DT_INCBIN '(' DT_STRING ',' expr_prim ',' expr_prim ')'
+	| propdataprefix DT_INCBIN '(' expr_prim ',' expr_prim ',' expr_prim ')'
 		{
-			FILE *f = srcfile_relative_open($4.val, NULL);
+			const char *filename = expr_str($4);
+			FILE *f = srcfile_relative_open(filename, NULL);
 			off_t offset = expr_int($6);
 			struct data d;
 
 			if (offset != 0)
 				if (fseek(f, offset, SEEK_SET) != 0)
 					die("Couldn't seek to offset %llu in \"%s\": %s",
-					    (unsigned long long)offset, $4.val,
+					    (unsigned long long)offset, filename,
 					    strerror(errno));
 
 			d = data_copy_file(f, expr_int($8));
@@ -339,6 +339,14 @@ arrayprefix:
 expr_prim:
 	  DT_LITERAL 		{ $$ = expression_integer_constant(&yylloc, $1); }
 	| DT_CHAR_LITERAL	{ $$ = expression_integer_constant(&yylloc, $1); }
+	| DT_STRING
+		{
+			$$ = expression_string_constant(&yylloc, $1);
+		}
+	| '[' bytestring_literal ']'
+		{
+			$$ = expression_bytestring_constant(&@2, $2);
+		}
 	| '(' expr ')'
 		{
 			$$ = $2;
@@ -422,16 +430,16 @@ expr_unary:
 	| '!' expr_unary { $$ = UNOP(@$, logic_not, $2); }
 	;
 
-bytestring:
+bytestring_literal:
 	  /* empty */
 		{
 			$$ = empty_data;
 		}
-	| bytestring DT_BYTE
+	| bytestring_literal DT_BYTE
 		{
 			$$ = data_append_byte($1, $2);
 		}
-	| bytestring DT_LABEL
+	| bytestring_literal DT_LABEL
 		{
 			$$ = data_add_marker($1, LABEL, $2);
 		}
@@ -486,4 +494,28 @@ static uint64_t expr_int(struct expression *expr)
 	}
 	assert(v.type == EXPR_INTEGER);
 	return v.value.integer;
+}
+
+static const char *expr_str(struct expression *expr)
+{
+	struct expression_value v = expression_evaluate(expr, EXPR_STRING);
+
+	if (v.type == EXPR_VOID) {
+		treesource_error = true;
+		return "";
+	}
+	assert(v.type == EXPR_STRING);
+	return v.value.d.val;
+}
+
+static struct data expr_bytestring(struct expression *expr)
+{
+	struct expression_value v = expression_evaluate(expr, EXPR_BYTESTRING);
+
+	if (v.type == EXPR_VOID) {
+		treesource_error = true;
+		return empty_data;
+	}
+	assert(v.type == EXPR_BYTESTRING);
+	return v.value.d;
 }

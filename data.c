@@ -237,17 +237,27 @@ struct data data_append_align(struct data d, int align)
 	return data_append_zeroes(d, newlen - d.len);
 }
 
-struct data data_add_marker(struct data d, enum markertype type, char *ref)
+static struct data data_add_marker_at(struct data d, enum markertype type,
+				      int offset, char *ref)
 {
 	struct marker *m;
 
+	m = d.markers;
+	for_each_marker(m)
+		assert(m->offset <= offset);
+
 	m = xmalloc(sizeof(*m));
-	m->offset = d.len;
+	m->offset = offset;
 	m->type = type;
 	m->ref = ref;
 	m->next = NULL;
 
 	return data_append_markers(d, m);
+}
+
+struct data data_add_marker(struct data d, enum markertype type, char *ref)
+{
+	return data_add_marker_at(d, type, d.len, ref);
 }
 
 bool data_is_one_string(struct data d)
@@ -266,4 +276,16 @@ bool data_is_one_string(struct data d)
 		return false;
 
 	return true;
+}
+
+struct data data_clone(struct data d)
+{
+	struct data clone = data_copy_mem(d.val, d.len);
+	struct marker *m = d.markers;
+
+	for_each_marker(m)
+		clone = data_add_marker_at(clone, m->type,
+					   m->offset, strdup(m->ref));
+
+	return clone;
 }

@@ -120,6 +120,8 @@ struct data data_add_marker(struct data d, enum markertype type, char *ref);
 
 bool data_is_one_string(struct data d);
 
+struct data data_clone(struct data d);
+
 /* DT constraints */
 
 #define MAX_PROPNAME_LEN	31
@@ -226,12 +228,15 @@ struct srcpos;
 enum expr_type {
 	EXPR_VOID = 0, /* Missing or unspecified type */
 	EXPR_INTEGER,
+	EXPR_STRING,
+	EXPR_BYTESTRING,
 };
 
 struct expression_value {
 	enum expr_type type;
 	union {
 		uint64_t integer;
+		struct data d;
 	} value;
 };
 
@@ -251,6 +256,11 @@ struct expression_value expression_evaluate(struct expression *expr,
 
 struct expression *expression_integer_constant(struct srcpos *pos,
 					       uint64_t val);
+
+struct expression *expression_string_constant(struct srcpos *pos,
+					      struct data d);
+struct expression *expression_bytestring_constant(struct srcpos *pos,
+						  struct data val);
 
 #define DEF_UNARY_OP(nm) \
 	struct expression *expression_##nm(struct srcpos *, \

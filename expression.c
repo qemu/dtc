@@ -29,8 +29,46 @@ static const char *expression_typename(enum expr_type t)
 	case EXPR_INTEGER:
 		return "integer";
 
+	case EXPR_STRING:
+		return "string";
+
+	case EXPR_BYTESTRING:
+		return "bytestring";
+
 	default:
 		assert(0);
+	}
+}
+
+static struct expression_value value_clone(struct expression_value val)
+{
+	struct expression_value clone = val;
+
+	switch (val.type) {
+	case EXPR_STRING:
+	case EXPR_BYTESTRING:
+		clone.value.d = data_clone(val.value.d);
+		break;
+
+	default:
+		/* nothing more to do */
+		;
+	}
+
+	return clone;
+}
+
+static void value_free(struct expression_value val)
+{
+	switch (val.type) {
+	case EXPR_STRING:
+	case EXPR_BYTESTRING:
+		data_free(val.value.d);
+		break;
+
+	default:
+		/* nothing to do */
+		;
 	}
 }
 
@@ -106,6 +144,11 @@ struct expression_value expression_evaluate(struct expression *expr,
 {
 	struct expression_value v = expr->op->evaluate(expr, context);
 
+	/* Strings can be promoted to bytestrings */
+	if ((v.type == EXPR_STRING)
+	    && (context == EXPR_BYTESTRING))
+		v.type = EXPR_BYTESTRING;
+
 	if ((context != EXPR_VOID) && (context != v.type))
 		return type_error(expr, "Expected %s expression (found %s)",
 				  expression_typename(context),
@@ -128,15 +171,35 @@ struct expression_value expression_evaluate(struct expression *expr,
 		(_vi) = (_v).value.integer; \
 	} while (0)
 
+#define EVALUATE_STR(_vs, _ex) \
+	do { \
+		struct expression_value _v; \
+		EVALUATE(_v, (_ex), EXPR_STRING); \
+		(_vs) = (_v).value.d; \
+	} while (0)
+
+#define EVALUATE_BS(_vd, _ex) \
+	do { \
+		struct expression_value _v; \
+		EVALUATE(_v, (_ex), EXPR_BYTESTRING); \
+		(_vd) = (_v).value.d; \
+	} while (0)
+
 static struct expression_value op_eval_constant(struct expression *expr,
 						enum expr_type context)
 {
 	assert(expr->nargs == 0);
-	return expr->u.constant;
+	return value_clone(expr->u.constant);
 }
+static void op_free_constant(struct expression *expr)
+{
+	value_free(expr->u.constant);
+}
+
 static struct operator op_constant = {
 	.name = "constant",
 	.evaluate = op_eval_constant,
+	.free = op_free_constant,
 };
 
 static struct expression *__expression_constant(struct srcpos *loc,
@@ -154,6 +217,28 @@ struct expression *expression_integer_constant(struct srcpos *pos,
 	struct expression_value v = {
 		.type = EXPR_INTEGER,
 		.value.integer = val,
+	};
+
+	return __expression_constant(pos, v);
+}
+
+struct expression *expression_string_constant(struct srcpos *pos,
+					      struct data val)
+{
+	struct expression_value v = {
+		.type = EXPR_STRING,
+		.value.d = val,
+	};
+
+	return __expression_constant(pos, v);
+}
+
+struct expression *expression_bytestring_constant(struct srcpos *pos,
+						  struct data val)
+{
+	struct expression_value v = {
+		.type = EXPR_BYTESTRING,
+		.value.d = val,
 	};
 
 	return __expression_constant(pos, v);
