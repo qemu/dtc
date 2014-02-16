@@ -20,10 +20,25 @@
 #include "srcpos.h"
 #include "dtc.h"
 
+static const char *expression_typename(enum expr_type t)
+{
+	switch (t) {
+	case EXPR_VOID:
+		return "void";
+
+	case EXPR_INTEGER:
+		return "integer";
+
+	default:
+		assert(0);
+	}
+}
+
 struct operator {
 	const char *name;
 	unsigned nargs;
-	uint64_t (*evaluate)(struct expression *);
+	struct expression_value (*evaluate)(struct expression *,
+					    enum expr_type context);
 	void (*free)(struct expression *);
 };
 
@@ -70,12 +85,51 @@ void expression_free(struct expression *expr)
 	free(expr);
 }
 
-uint64_t expression_evaluate(struct expression *expr)
+static struct expression_value type_error(struct expression *expr,
+					  const char *fmt, ...)
 {
-	return expr->op->evaluate(expr);
+	static const struct expression_value v = {
+		.type = EXPR_VOID,
+	};
+
+	va_list(ap);
+
+	va_start(ap, fmt);
+	srcpos_verror(expr->loc, "Type error", fmt, ap);
+	va_end(ap);
+
+	return v;
 }
 
-static uint64_t op_eval_constant(struct expression *expr)
+struct expression_value expression_evaluate(struct expression *expr,
+					    enum expr_type context)
+{
+	struct expression_value v = expr->op->evaluate(expr, context);
+
+	if ((context != EXPR_VOID) && (context != v.type))
+		return type_error(expr, "Expected %s expression (found %s)",
+				  expression_typename(context),
+				  expression_typename(v.type));
+
+	return v;
+}
+
+#define EVALUATE(_v, _ex, _ctx) \
+	do { \
+		(_v) = expression_evaluate((_ex), (_ctx)); \
+		if ((_v).type == EXPR_VOID) \
+			return (_v); \
+	} while (0)
+
+#define EVALUATE_INT(_vi, _ex) \
+	do { \
+		struct expression_value _v; \
+		EVALUATE(_v, (_ex), EXPR_INTEGER); \
+		(_vi) = (_v).value.integer; \
+	} while (0)
+
+static struct expression_value op_eval_constant(struct expression *expr,
+						enum expr_type context)
 {
 	assert(expr->nargs == 0);
 	return expr->u.constant;
@@ -84,7 +138,9 @@ static struct operator op_constant = {
 	.name = "constant",
 	.evaluate = op_eval_constant,
 };
-struct expression *expression_constant(struct srcpos *loc, uint64_t val)
+
+static struct expression *__expression_constant(struct srcpos *loc,
+						struct expression_value val)
 {
 	struct expression *expr = expression_build(loc, &op_constant);
 
@@ -92,11 +148,27 @@ struct expression *expression_constant(struct srcpos *loc, uint64_t val)
 	return expr;
 }
 
+struct expression *expression_integer_constant(struct srcpos *pos,
+					       uint64_t val)
+{
+	struct expression_value v = {
+		.type = EXPR_INTEGER,
+		.value.integer = val,
+	};
+
+	return __expression_constant(pos, v);
+}
+
 #define INT_UNARY_OP(nm, cop) \
-	static uint64_t op_eval_##nm(struct expression *expr) \
+	static struct expression_value op_eval_##nm(struct expression *expr, \
+						    enum expr_type context) \
 	{ \
+		struct expression_value v = { .type = EXPR_INTEGER, }; \
+		uint64_t arg; \
 		assert(expr->nargs == 1); \
-		return cop expression_evaluate(expr->arg[0]);	\
+		EVALUATE_INT(arg, expr->arg[0]); \
+		v.value.integer = cop arg; \
+		return v; \
 	} \
 	static struct operator op_##nm = { \
 		.name = #cop, \
@@ -113,11 +185,16 @@ INT_UNARY_OP(bit_not, ~)
 INT_UNARY_OP(logic_not, !)
 
 #define INT_BINARY_OP(nm, cop) \
-	static uint64_t op_eval_##nm(struct expression *expr) \
+	static struct expression_value op_eval_##nm(struct expression *expr, \
+						    enum expr_type context) \
 	{ \
+		struct expression_value v = { .type = EXPR_INTEGER, }; \
+		uint64_t arg0, arg1; \
 		assert(expr->nargs == 2); \
-		return expression_evaluate(expr->arg[0]) \
-			cop expression_evaluate(expr->arg[1]);	\
+		EVALUATE_INT(arg0, expr->arg[0]); \
+		EVALUATE_INT(arg1, expr->arg[1]); \
+		v.value.integer = arg0 cop arg1; \
+		return v; \
 	} \
 	static struct operator op_##nm = { \
 		.name = #cop, \
@@ -155,12 +232,16 @@ INT_BINARY_OP(bit_or, |)
 INT_BINARY_OP(logic_and, &&)
 INT_BINARY_OP(logic_or, ||)
 
-static uint64_t op_eval_conditional(struct expression *expr)
+static struct expression_value op_eval_conditional(struct expression *expr,
+						   enum expr_type context)
 {
+	uint64_t cond;
+
 	assert(expr->nargs == 3);
-	return expression_evaluate(expr->arg[0])
-		? expression_evaluate(expr->arg[1])
-		: expression_evaluate(expr->arg[2]);
+	EVALUATE_INT(cond, expr->arg[0]);
+
+	return cond ? expression_evaluate(expr->arg[1], context)
+		: expression_evaluate(expr->arg[2], context);
 }
 static struct operator op_conditional = {
 	.name = "?:",

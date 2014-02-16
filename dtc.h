@@ -223,20 +223,34 @@ uint32_t guess_boot_cpuid(struct node *tree);
 struct operator;
 struct srcpos;
 
+enum expr_type {
+	EXPR_VOID = 0, /* Missing or unspecified type */
+	EXPR_INTEGER,
+};
+
+struct expression_value {
+	enum expr_type type;
+	union {
+		uint64_t integer;
+	} value;
+};
+
 struct expression {
 	struct srcpos *loc;
 	struct operator *op;
 	int nargs;
 	union {
-		uint64_t constant;
+		struct expression_value constant;
 	} u;
 	struct expression *arg[0];
 };
 
 void expression_free(struct expression *expr);
-uint64_t expression_evaluate(struct expression *expr);
+struct expression_value expression_evaluate(struct expression *expr,
+					    enum expr_type context);
 
-struct expression *expression_constant(struct srcpos *pos, uint64_t val);
+struct expression *expression_integer_constant(struct srcpos *pos,
+					       uint64_t val);
 
 #define DEF_UNARY_OP(nm) \
 	struct expression *expression_##nm(struct srcpos *, \

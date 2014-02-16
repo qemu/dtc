@@ -128,8 +128,7 @@ memreserves:
 memreserve:
 	  DT_MEMRESERVE expr_prim expr_prim ';'
 		{
-			$$ = build_reserve_entry(expr_int($2),
-						 expr_int($3));
+			$$ = build_reserve_entry(expr_int($2), expr_int($3));
 		}
 	| DT_LABEL memreserve
 		{
@@ -338,8 +337,8 @@ arrayprefix:
 	;
 
 expr_prim:
-	  DT_LITERAL 		{ $$ = expression_constant(&yylloc, $1); }
-	| DT_CHAR_LITERAL	{ $$ = expression_constant(&yylloc, $1); }
+	  DT_LITERAL 		{ $$ = expression_integer_constant(&yylloc, $1); }
+	| DT_CHAR_LITERAL	{ $$ = expression_integer_constant(&yylloc, $1); }
 	| '(' expr ')'
 		{
 			$$ = $2;
@@ -479,8 +478,12 @@ void yyerror(char const *s)
 
 static uint64_t expr_int(struct expression *expr)
 {
-	uint64_t val;
-	val = expression_evaluate(expr);
-	expression_free(expr);
-	return val;
+	struct expression_value v = expression_evaluate(expr, EXPR_INTEGER);
+
+	if (v.type == EXPR_VOID) {
+		treesource_error = true;
+		return -1;
+	}
+	assert(v.type == EXPR_INTEGER);
+	return v.value.integer;
 }
