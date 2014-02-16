@@ -305,6 +305,10 @@ struct expression *expression_conditional(struct srcpos *pos,
 					  struct expression *,
 					  struct expression *,
 					  struct expression *);
+struct expression *expression_incbin(struct srcpos *loc,
+				     struct expression *file,
+				     struct expression *off,
+				     struct expression *len);
 
 /* Boot info (tree plus memreserve information */
 

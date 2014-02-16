@@ -35,7 +35,6 @@ extern struct boot_info *the_boot_info;
 extern bool treesource_error;
 
 static uint64_t expr_int(struct expression *expr);
-static const char *expr_str(struct expression *expr);
 static struct data expr_bytestring(struct expression *expr);
 
 #define UNOP(loc, op, a)	(expression_##op(&loc, (a)))
@@ -91,6 +90,7 @@ static struct data expr_bytestring(struct expression *expr);
 %type <node> subnode
 %type <nodelist> subnodes
 
+%type <expr> expr_incbin
 %type <expr> expr_prim
 %type <expr> expr_unary
 %type <expr> expr_mul
@@ -224,34 +224,6 @@ propdata:
 		{
 			$$ = data_add_marker($1, REF_PATH, $2);
 		}
-	| propdataprefix DT_INCBIN '(' expr_prim ',' expr_prim ',' expr_prim ')'
-		{
-			const char *filename = expr_str($4);
-			FILE *f = srcfile_relative_open(filename, NULL);
-			off_t offset = expr_int($6);
-			struct data d;
-
-			if (offset != 0)
-				if (fseek(f, offset, SEEK_SET) != 0)
-					die("Couldn't seek to offset %llu in \"%s\": %s",
-					    (unsigned long long)offset, filename,
-					    strerror(errno));
-
-			d = data_copy_file(f, expr_int($8));
-
-			$$ = data_merge($1, d);
-			fclose(f);
-		}
-	| propdataprefix DT_INCBIN '(' DT_STRING ')'
-		{
-			FILE *f = srcfile_relative_open($4.val, NULL);
-			struct data d = empty_data;
-
-			d = data_copy_file(f, -1);
-
-			$$ = data_merge($1, d);
-			fclose(f);
-		}
 	| propdata DT_LABEL
 		{
 			$$ = data_add_marker($1, LABEL, $2);
@@ -336,6 +308,19 @@ arrayprefix:
 		}
 	;
 
+expr_incbin:
+	  DT_INCBIN '(' expr_conditional ',' expr_conditional ',' expr_conditional ')'
+		{
+			$$ = expression_incbin(&@$, $3, $5, $7);
+		}
+	| DT_INCBIN '(' expr_conditional ')'
+		{
+			$$ = expression_incbin(&@$, $3,
+					       expression_integer_constant(NULL, 0),
+					       expression_integer_constant(NULL, -1));
+		}
+	;
+
 expr_prim:
 	  DT_LITERAL 		{ $$ = expression_integer_constant(&yylloc, $1); }
 	| DT_CHAR_LITERAL	{ $$ = expression_integer_constant(&yylloc, $1); }
@@ -347,6 +332,7 @@ expr_prim:
 		{
 			$$ = expression_bytestring_constant(&@2, $2);
 		}
+	| expr_incbin
 	| '(' expr ')'
 		{
 			$$ = $2;
@@ -494,18 +480,6 @@ static uint64_t expr_int(struct expression *expr)
 	}
 	assert(v.type == EXPR_INTEGER);
 	return v.value.integer;
-}
-
-static const char *expr_str(struct expression *expr)
-{
-	struct expression_value v = expression_evaluate(expr, EXPR_STRING);
-
-	if (v.type == EXPR_VOID) {
-		treesource_error = true;
-		return "";
-	}
-	assert(v.type == EXPR_STRING);
-	return v.value.d.val;
 }
 
 static struct data expr_bytestring(struct expression *expr)

@@ -339,3 +339,44 @@ struct expression *expression_conditional(struct srcpos *loc,
 {
 	return expression_build(loc, &op_conditional, arg1, arg2, arg3);
 }
+
+
+static struct expression_value op_eval_incbin(struct expression *expr,
+					      enum expr_type context)
+{
+	struct data filename;
+	uint64_t offset, len;
+	FILE *f;
+	struct expression_value v = {
+		.type = EXPR_BYTESTRING,
+	};
+
+	EVALUATE_STR(filename, expr->arg[0]);
+	EVALUATE_INT(offset, expr->arg[1]);
+	EVALUATE_INT(len, expr->arg[2]);
+
+	f = srcfile_relative_open(filename.val, NULL);
+
+	if (offset != 0)
+		if (fseek(f, offset, SEEK_SET) != 0)
+			die("Couldn't seek to offset %llu in \"%s\": %s",
+			    (unsigned long long)offset, filename.val,
+			    strerror(errno));
+
+	v.value.d = data_copy_file(f, len);
+
+	fclose(f);
+	return v;
+}
+static struct operator op_incbin = {
+	.name = "/incbin/",
+	.nargs = 3,
+	.evaluate = op_eval_incbin,
+};
+struct expression *expression_incbin(struct srcpos *loc,
+				     struct expression *file,
+				     struct expression *off,
+				     struct expression *len)
+{
+	return expression_build(loc, &op_incbin, file, off, len);
+}
