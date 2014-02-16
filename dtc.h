@@ -218,6 +218,64 @@ cell_t get_node_phandle(struct node *root, struct node *node);
 
 uint32_t guess_boot_cpuid(struct node *tree);
 
+/* Expressions */
+
+struct operator;
+
+struct expression {
+	struct operator *op;
+	int nargs;
+	union {
+		uint64_t constant;
+	} u;
+	struct expression *arg[0];
+};
+
+void expression_free(struct expression *expr);
+uint64_t expression_evaluate(struct expression *expr);
+
+struct expression *expression_constant(uint64_t val);
+
+#define DEF_UNARY_OP(nm) \
+	struct expression *expression_##nm(struct expression *)
+DEF_UNARY_OP(negate);
+DEF_UNARY_OP(bit_not);
+DEF_UNARY_OP(logic_not);
+
+#define DEF_BINARY_OP(nm) \
+	struct expression *expression_##nm(struct expression *, struct expression *)
+DEF_BINARY_OP(mod);
+DEF_BINARY_OP(div);
+DEF_BINARY_OP(mul);
+
+DEF_BINARY_OP(add);
+DEF_BINARY_OP(sub);
+
+DEF_BINARY_OP(lshift);
+DEF_BINARY_OP(rshift);
+
+DEF_BINARY_OP(lt);
+DEF_BINARY_OP(gt);
+DEF_BINARY_OP(le);
+DEF_BINARY_OP(ge);
+
+DEF_BINARY_OP(eq);
+DEF_BINARY_OP(ne);
+
+DEF_BINARY_OP(bit_and);
+
+DEF_BINARY_OP(bit_xor);
+
+DEF_BINARY_OP(bit_or);
+
+DEF_BINARY_OP(logic_and);
+
+DEF_BINARY_OP(logic_or);
+
+struct expression *expression_conditional(struct expression *,
+					  struct expression *,
+					  struct expression *);
+
 /* Boot info (tree plus memreserve information */
 
 struct reserve_info {

@@ -33,6 +33,11 @@ extern void yyerror(char const *s);
 
 extern struct boot_info *the_boot_info;
 extern bool treesource_error;
+
+static uint64_t expr_int(struct expression *expr);
+
+#define UNOP(op, a)	(expression_##op((a)))
+#define BINOP(op, a, b)	(expression_##op((a), (b)))
 %}
 
 %union {
@@ -52,6 +57,7 @@ extern bool treesource_error;
 	struct node *nodelist;
 	struct reserve_info *re;
 	uint64_t integer;
+	struct expression *expr;
 }
 
 %token DT_V1
@@ -83,20 +89,20 @@ extern bool treesource_error;
 %type <node> subnode
 %type <nodelist> subnodes
 
-%type <integer> integer_prim
-%type <integer> integer_unary
-%type <integer> integer_mul
-%type <integer> integer_add
-%type <integer> integer_shift
-%type <integer> integer_rela
-%type <integer> integer_eq
-%type <integer> integer_bitand
-%type <integer> integer_bitxor
-%type <integer> integer_bitor
-%type <integer> integer_and
-%type <integer> integer_or
-%type <integer> integer_trinary
-%type <integer> integer_expr
+%type <expr> expr_prim
+%type <expr> expr_unary
+%type <expr> expr_mul
+%type <expr> expr_add
+%type <expr> expr_shift
+%type <expr> expr_rela
+%type <expr> expr_eq
+%type <expr> expr_bitand
+%type <expr> expr_bitxor
+%type <expr> expr_bitor
+%type <expr> expr_and
+%type <expr> expr_or
+%type <expr> expr_conditional
+%type <expr> expr
 
 %%
 
@@ -120,9 +126,10 @@ memreserves:
 	;
 
 memreserve:
-	  DT_MEMRESERVE integer_prim integer_prim ';'
+	  DT_MEMRESERVE expr_prim expr_prim ';'
 		{
-			$$ = build_reserve_entry($2, $3);
+			$$ = build_reserve_entry(expr_int($2),
+						 expr_int($3));
 		}
 	| DT_LABEL memreserve
 		{
@@ -219,18 +226,19 @@ propdata:
 		{
 			$$ = data_add_marker($1, REF_PATH, $2);
 		}
-	| propdataprefix DT_INCBIN '(' DT_STRING ',' integer_prim ',' integer_prim ')'
+	| propdataprefix DT_INCBIN '(' DT_STRING ',' expr_prim ',' expr_prim ')'
 		{
 			FILE *f = srcfile_relative_open($4.val, NULL);
+			off_t offset = expr_int($6);
 			struct data d;
 
-			if ($6 != 0)
-				if (fseek(f, $6, SEEK_SET) != 0)
+			if (offset != 0)
+				if (fseek(f, offset, SEEK_SET) != 0)
 					die("Couldn't seek to offset %llu in \"%s\": %s",
-					    (unsigned long long)$6, $4.val,
+					    (unsigned long long)offset, $4.val,
 					    strerror(errno));
 
-			d = data_copy_file(f, $8);
+			d = data_copy_file(f, expr_int($8));
 
 			$$ = data_merge($1, d);
 			fclose(f);
@@ -288,8 +296,10 @@ arrayprefix:
 			$$.data = empty_data;
 			$$.bits = 32;
 		}
-	| arrayprefix integer_prim
+	| arrayprefix expr_prim
 		{
+			uint64_t val = expr_int($2);
+
 			if ($1.bits < 64) {
 				uint64_t mask = (1ULL << $1.bits) - 1;
 				/*
@@ -300,12 +310,12 @@ arrayprefix:
 				 * within the mask to one (i.e. | in the
 				 * mask), all bits are one.
 				 */
-				if (($2 > mask) && (($2 | mask) != -1ULL))
+				if ((val > mask) && ((val | mask) != -1ULL))
 					ERROR(&@2, "Value out of range for"
 					      " %d-bit array element", $1.bits);
 			}
 
-			$$.data = data_append_integer($1.data, $2, $1.bits);
+			$$.data = data_append_integer($1.data, val, $1.bits);
 		}
 	| arrayprefix DT_REF
 		{
@@ -327,87 +337,90 @@ arrayprefix:
 		}
 	;
 
-integer_prim:
-	  DT_LITERAL
-	| DT_CHAR_LITERAL
-	| '(' integer_expr ')'
+expr_prim:
+	  DT_LITERAL 		{ $$ = expression_constant($1); }
+	| DT_CHAR_LITERAL	{ $$ = expression_constant($1); }
+	| '(' expr ')'
 		{
 			$$ = $2;
 		}
 	;
 
-integer_expr:
-	integer_trinary
+expr:
+	expr_conditional
 	;
 
-integer_trinary:
-	  integer_or
-	| integer_or '?' integer_expr ':' integer_trinary { $$ = $1 ? $3 : $5; }
+expr_conditional:
+	  expr_or
+	| expr_or '?' expr ':' expr_conditional
+		{
+			$$ = expression_conditional($1, $3, $5);
+		}
 	;
 
-integer_or:
-	  integer_and
-	| integer_or DT_OR integer_and { $$ = $1 || $3; }
+expr_or:
+	  expr_and
+	| expr_or DT_OR expr_and { $$ = BINOP(logic_or, $1, $3); }
 	;
 
-integer_and:
-	  integer_bitor
-	| integer_and DT_AND integer_bitor { $$ = $1 && $3; }
+expr_and:
+	  expr_bitor
+	| expr_and DT_AND expr_bitor { $$ = BINOP(logic_and, $1, $3); }
 	;
 
-integer_bitor:
-	  integer_bitxor
-	| integer_bitor '|' integer_bitxor { $$ = $1 | $3; }
+expr_bitor:
+	  expr_bitxor
+	| expr_bitor '|' expr_bitxor { $$ = BINOP(bit_or, $1, $3); }
 	;
 
-integer_bitxor:
-	  integer_bitand
-	| integer_bitxor '^' integer_bitand { $$ = $1 ^ $3; }
+expr_bitxor:
+	  expr_bitand
+	| expr_bitxor '^' expr_bitand { $$ = BINOP(bit_xor, $1, $3); }
 	;
 
-integer_bitand:
-	  integer_eq
-	| integer_bitand '&' integer_eq { $$ = $1 & $3; }
+expr_bitand:
+	  expr_eq
+	| expr_bitand '&' expr_eq { $$ = BINOP(bit_and, $1, $3); }
 	;
 
-integer_eq:
-	  integer_rela
-	| integer_eq DT_EQ integer_rela { $$ = $1 == $3; }
-	| integer_eq DT_NE integer_rela { $$ = $1 != $3; }
+expr_eq:
+	  expr_rela
+	| expr_eq DT_EQ expr_rela { $$ = BINOP(eq, $1, $3); }
+	| expr_eq DT_NE expr_rela { $$ = BINOP(ne, $1, $3); }
 	;
 
-integer_rela:
-	  integer_shift
-	| integer_rela '<' integer_shift { $$ = $1 < $3; }
-	| integer_rela '>' integer_shift { $$ = $1 > $3; }
-	| integer_rela DT_LE integer_shift { $$ = $1 <= $3; }
-	| integer_rela DT_GE integer_shift { $$ = $1 >= $3; }
+expr_rela:
+	  expr_shift
+	| expr_rela '<' expr_shift { $$ = BINOP(lt, $1, $3); }
+	| expr_rela '>' expr_shift { $$ = BINOP(gt, $1, $3); }
+	| expr_rela DT_LE expr_shift { $$ = BINOP(le, $1, $3); }
+	| expr_rela DT_GE expr_shift { $$ = BINOP(ge, $1, $3); }
 	;
 
-integer_shift:
-	  integer_shift DT_LSHIFT integer_add { $$ = $1 << $3; }
-	| integer_shift DT_RSHIFT integer_add { $$ = $1 >> $3; }
-	| integer_add
+expr_shift:
+	  expr_shift DT_LSHIFT expr_add { $$ = BINOP(lshift, $1, $3); }
+	| expr_shift DT_RSHIFT expr_add { $$ = BINOP(rshift, $1, $3); }
+	| expr_add
 	;
 
-integer_add:
-	  integer_add '+' integer_mul { $$ = $1 + $3; }
-	| integer_add '-' integer_mul { $$ = $1 - $3; }
-	| integer_mul
+expr_add:
+	  expr_add '+' expr_mul { $$ = BINOP(add, $1, $3); }
+	| expr_add '-' expr_mul { $$ = BINOP(sub, $1, $3); }
+	| expr_mul
 	;
 
-integer_mul:
-	  integer_mul '*' integer_unary { $$ = $1 * $3; }
-	| integer_mul '/' integer_unary { $$ = $1 / $3; }
-	| integer_mul '%' integer_unary { $$ = $1 % $3; }
-	| integer_unary
+expr_mul:
+	  expr_mul '*' expr_unary { $$ = BINOP(mul, $1, $3); }
+	| expr_mul '/' expr_unary { $$ = BINOP(div, $1, $3); }
+	| expr_mul '%' expr_unary { $$ = BINOP(mod, $1, $3); }
+	| expr_unary
 	;
 
-integer_unary:
-	  integer_prim
-	| '-' integer_unary { $$ = -$2; }
-	| '~' integer_unary { $$ = ~$2; }
-	| '!' integer_unary { $$ = !$2; }
+expr_unary:
+	  expr_prim
+	| '-' expr_unary { $$ = UNOP(negate, $2); }
+	| '~' expr_unary { $$ = UNOP(bit_not, $2); }
+	| '!' expr_unary { $$ = UNOP(logic_not, $2); }
 	;
 
 bytestring:
@@ -462,4 +475,12 @@ subnode:
 void yyerror(char const *s)
 {
 	ERROR(&yylloc, "%s", s);
+}
+
+static uint64_t expr_int(struct expression *expr)
+{
+	uint64_t val;
+	val = expression_evaluate(expr);
+	expression_free(expr);
+	return val;
 }
