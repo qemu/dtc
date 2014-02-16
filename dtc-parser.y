@@ -219,10 +219,6 @@ propdata:
 			struct data d = expr_bytestring($2);
 			$$ = data_merge($1, d);
 		}
-	| propdataprefix DT_REF
-		{
-			$$ = data_add_marker($1, REF_PATH, $2);
-		}
 	;
 
 propdataprefix:
@@ -349,6 +345,11 @@ expr_postlabel:
 
 expr_conditional:
 	  expr_or
+	| DT_REF
+		{
+			struct data d = data_add_marker(empty_data, REF_PATH, $1);
+			$$ = expression_bytestring_constant(&@$, d);
+		}
 	| expr_or '?' expr ':' expr_conditional
 		{
 			$$ = expression_conditional(&yylloc, $1, $3, $5);
