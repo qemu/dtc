@@ -76,8 +76,6 @@ static struct data expr_bytestring(struct expression *expr);
 %token <labelref> DT_REF
 %token DT_INCBIN
 
-%type <data> propdata
-%type <data> propdataprefix
 %type <re> memreserve
 %type <re> memreserves
 %type <array> array
@@ -107,6 +105,7 @@ static struct data expr_bytestring(struct expression *expr);
 %type <expr> expr_or
 %type <expr> expr_conditional
 %type <expr> expr_postlabel
+%type <expr> expr_join
 %type <expr> expr
 
 %%
@@ -194,9 +193,11 @@ proplist:
 	;
 
 propdef:
-	  DT_PROPNODENAME '=' propdata ';'
+	  DT_PROPNODENAME '=' expr ';'
 		{
-			$$ = build_property($1, $3);
+			struct data d = expr_bytestring($3);
+
+			$$ = build_property($1, d);
 		}
 	| DT_PROPNODENAME ';'
 		{
@@ -210,25 +211,6 @@ propdef:
 		{
 			add_label(&$2->labels, $1);
 			$$ = $2;
-		}
-	;
-
-propdata:
-	  propdataprefix expr
-		{
-			struct data d = expr_bytestring($2);
-			$$ = data_merge($1, d);
-		}
-	;
-
-propdataprefix:
-	  /* empty */
-		{
-			$$ = empty_data;
-		}
-	| propdata ','
-		{
-			$$ = $1;
 		}
 	;
 
@@ -328,7 +310,15 @@ expr_prim:
 	;
 
 expr:
+	  expr_join
+	;
+
+expr_join:
 	  expr_postlabel
+	| expr_join ',' expr_postlabel
+		{
+			$$ = expression_join(&@$, $1, $3);
+		}
 	;
 
 expr_postlabel:
@@ -342,6 +332,7 @@ expr_postlabel:
 			$$ = expression_join(&@$, $1, label);
 		}
 	;
+
 
 expr_conditional:
 	  expr_or
