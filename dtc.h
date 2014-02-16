@@ -302,6 +302,10 @@ DEF_BINARY_OP(logic_and);
 
 DEF_BINARY_OP(logic_or);
 
+struct expression *expression_concat(struct srcpos *pos,
+				     struct expression *arg0,
+				     struct expression *arg1);
+
 struct expression *expression_conditional(struct srcpos *pos,
 					  struct expression *,
 					  struct expression *,

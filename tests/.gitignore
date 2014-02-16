@@ -48,6 +48,7 @@ tmp.*
 /setprop_inplace
 /sized_cells
 /string_escapes
+/string-expressions
 /subnode_iterate
 /subnode_offset
 /supernode_atdepth_offset

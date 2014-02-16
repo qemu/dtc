@@ -294,9 +294,7 @@ INT_UNARY_OP(logic_not, !)
 
 INT_BINARY_OP(mod, %)
 INT_BINARY_OP(div, /)
-INT_BINARY_OP(mul, *)
 
-INT_BINARY_OP(add, +)
 INT_BINARY_OP(sub, -)
 
 INT_BINARY_OP(lshift, <<)
@@ -316,6 +314,121 @@ INT_BINARY_OP(bit_or, |)
 
 INT_BINARY_OP(logic_and, &&)
 INT_BINARY_OP(logic_or, ||)
+
+/*
+ * We need to write out add and mul in full, since they can be used on
+ * both integer and string arguments with different meanings
+ */
+
+static struct expression_value op_eval_mul(struct expression *expr,
+					   enum expr_type context)
+{
+	struct expression_value arg0, arg1;
+	struct expression_value v;
+	uint64_t n, i;
+	struct data s;
+	struct data d = empty_data;
+
+	assert(expr->nargs == 2);
+	EVALUATE(arg0, expr->arg[0], EXPR_VOID);
+	EVALUATE(arg1, expr->arg[1], EXPR_VOID);
+
+	if ((arg0.type == EXPR_INTEGER) && (arg1.type == EXPR_INTEGER)) {
+		v.type = EXPR_INTEGER;
+		v.value.integer = arg0.value.integer * arg1.value.integer;
+		return v;
+	} else if ((arg0.type != EXPR_INTEGER) && (arg0.type != EXPR_STRING)) {
+		return type_error(expr->arg[0], "Expected integer or string"
+				  " expression (found %s)",
+				  expression_typename(arg0.type));
+	} else if (arg0.type == EXPR_INTEGER) {
+		if (arg1.type != EXPR_STRING)
+			return type_error(expr->arg[1], "Expected string"
+					  " expression (found %s)",
+					  expression_typename(arg1.type));
+		n = arg0.value.integer; 
+		s = arg1.value.d;
+	} else {
+		assert(arg0.type == EXPR_STRING);
+		if (arg1.type != EXPR_INTEGER)
+			return type_error(expr->arg[1], "Expected integer"
+					  " expression (found %s)",
+					  expression_typename(arg1.type));
+		n = arg1.value.integer;
+		s = arg0.value.d;
+	}
+
+	for (i = 0; i < n; i++)
+		d = data_append_data(d, s.val, s.len - 1);
+
+	v.type = EXPR_STRING;
+	v.value.d = data_append_byte(d, 0); /* Terminating \0 */
+
+	return v;
+}
+static struct operator op_mul = {
+	.name = "*",
+	.evaluate = op_eval_mul,
+};
+struct expression *expression_mul(struct srcpos *loc,
+				  struct expression *arg0,
+				  struct expression *arg1)
+{
+	return expression_build(loc, &op_mul, arg0, arg1);
+}
+
+static struct expression_value op_eval_add(struct expression *expr,
+					   enum expr_type context)
+{
+	struct expression_value arg0, arg1;
+	struct expression_value v;
+
+	assert(expr->nargs == 2);
+	EVALUATE(arg0, expr->arg[0], EXPR_VOID);
+	EVALUATE(arg1, expr->arg[1], EXPR_VOID);
+	if ((arg0.type != EXPR_INTEGER) && (arg0.type != EXPR_STRING))
+		return type_error(expr->arg[0], "Expected integer or string"
+				  " expression (found %s)",
+				  expression_typename(arg0.type));
+	if ((arg1.type != EXPR_INTEGER) && (arg1.type != EXPR_STRING))
+		return type_error(expr->arg[0], "Expected integer or string"
+				  " expression (found %s)",
+				  expression_typename(arg1.type));
+
+	if (arg0.type != arg1.type)
+		return type_error(expr, "Operand types to + (%s, %s) don't match",
+				  expression_typename(arg0.type),
+				  expression_typename(arg1.type));
+
+	v.type = arg0.type;
+
+	switch (v.type) {
+	case EXPR_INTEGER:
+		v.value.integer = arg0.value.integer + arg1.value.integer;
+		break;
+
+	case EXPR_STRING:
+		v.value.d = data_copy_mem(arg0.value.d.val,
+					  arg0.value.d.len - 1);
+		v.value.d = data_append_data(v.value.d, arg1.value.d.val,
+					     arg1.value.d.len);
+		break;
+
+	default:
+		assert(0);
+	}
+	return v;
+}
+static struct operator op_add = {
+	.name = "+",
+	.evaluate = op_eval_add,
+};
+struct expression *expression_add(struct srcpos *loc,
+				  struct expression *arg0,
+				  struct expression *arg1)
+{
+	return expression_build(loc, &op_add, arg0, arg1);
+}
 
 static struct expression_value op_eval_conditional(struct expression *expr,
 						   enum expr_type context)

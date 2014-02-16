@@ -446,6 +446,11 @@ dtc_tests () {
     run_dtc_test -I dts -O dtb -o integer-expressions.test.dtb integer-expressions.test.dts
     run_test integer-expressions integer-expressions.test.dtb
 
+    # Check string expresisons
+    run_test string-expressions -g string-expressions.test.dts
+    run_dtc_test -I dts -O dtb -o string-expressions.test.dtb string-expressions.test.dts
+    run_test string-expressions string-expressions.test.dtb
+
     # Check for graceful failure in some error conditions
     run_sh_test dtc-fatal.sh -I dts -O dtb nosuchfile.dts
     run_sh_test dtc-fatal.sh -I dtb -O dtb nosuchfile.dtb
