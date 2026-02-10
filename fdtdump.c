@@ -146,8 +146,7 @@ static void dump_blob(void *blob, bool debug)
 			continue;
 		}
 
-		fprintf(stderr, "%*s ** Unknown tag 0x%08"PRIx32"\n", depth * shift, "", tag);
-		break;
+		die("** Unknown tag 0x%08"PRIx32"\n", tag);
 	}
 }
 
